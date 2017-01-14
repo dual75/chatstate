@@ -3,13 +3,13 @@ import threading
 from queue import Queue, Empty 
 
 
-def make_pool():
-    result = None
+def make_pool(single=False):
+    result = NullThreadPool()
     try:
         import uwsgi
-        result = NullThreadPool()
     except ImportError:
-        result = ThreadPool()
+        if not single:
+            result = ThreadPool()
     return result
     
     

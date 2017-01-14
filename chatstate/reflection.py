@@ -1,7 +1,7 @@
 import logging
 import types
 
-from . chatstate import ANY
+from chatstate import ANY
 
 TAG_ACTIVATE        = '_TELEGRAM_activate'
 TAG_DEACTIVATE      = '_TELEGRAM_deactivate'

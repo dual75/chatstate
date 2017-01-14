@@ -5,3 +5,4 @@
 *.dir
 __pycache__
 
+python_telegram_chatstate.egg-info
