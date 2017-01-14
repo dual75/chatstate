@@ -1,0 +1,7 @@
+*.pyc
+*.yml
+*.bak
+*.dat
+*.dir
+__pycache__
+
