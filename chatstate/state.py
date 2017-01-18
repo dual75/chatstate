@@ -40,13 +40,13 @@ class ChatState:
             for handler in handlers:
                 handler(self, event)
 
-    def handle_message(self, ctx, update):
+    def handle_message(self, update):
         with self._execution():
             self.last_active = time.time()
             handlers = list(self._message_handlers)
 
             if update.message.entities:
-                handlers.extend(self._process_entities(ctx, update))
+                handlers.extend(self._process_entities(update))
 
             joined_member = update.message.new_chat_member
             if joined_member:
@@ -65,7 +65,7 @@ class ChatState:
             for handler in handlers:
                 handler(self, update)
 
-    def _process_entities(self, ctx, update):
+    def _process_entities(self, update):
         result = []
         for ent in [e for e in update.message.entities if e.type == 'bot_command']:
             command = update.message.text[ent.offset: ent.offset + ent.length]
@@ -80,6 +80,7 @@ class ChatState:
                 for_me = recipient == self.me.username
 
             if for_me:
+                self.LOG.debug('command to handle %s', command)
                 if command == '/stop':
                     self.LOG.debug('remove chat %s', self.chat_id)
                     self._dispatcher.remove_chat_state(self)
@@ -92,6 +93,7 @@ class ChatState:
         result = None
         chunks = text.rsplit('@', 1)
         if len(chunks) == 2:
+            self.LOG.debug('found recipient %s in command %s', chunks[1], text)
             result = chunks
         return result
 
