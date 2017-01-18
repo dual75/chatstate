@@ -15,6 +15,7 @@ class ChatState:
 
     def __init__(self, dispatcher, chat_id, chat_type, user_or_group, instance, execution):
         print(chat_id, chat_type, user_or_group, 'dioporoco')
+        self.me = dispatcher.me
         self.chat_id = chat_id
         self.chat_type = chat_type
         self.user_or_group = user_or_group
@@ -57,21 +58,14 @@ class ChatState:
             for handler in handlers:
                 handler(self, event)
 
-    def handle_message(self, update):
+    def handle_message(self, ctx, update):
         with self._execution():
             self.last_active = time.time()
             text = update.message.text
             handlers = list(self._message_handlers)
 
-            entities = update.message.entities
-            if entities:
-                for ent in [e for e in entities if e.type == 'bot_command']:
-                    command = update.message.text[ent.offset: ent.offset + ent.length]
-                    if command == '/stop':
-                        self.LOG.debug('remove chat %s', self.chat_id)
-                        self._dispatcher.remove_chat_state(self)
-                    if self._command_handlers.get(command):
-                        handlers.extend(self._command_handlers[command])
+            if update.message.entities:
+                self._process_entities(ctx, update)
 
             joined_member = update.message.new_chat_member
             if joined_member:
@@ -89,6 +83,34 @@ class ChatState:
 
             for handler in handlers:
                 handler(self, update)
+
+    def _process_entities(self, ctx, update):
+        for ent in [e for e in entities if e.type == 'bot_command']:
+            command = update.message.text[ent.offset: ent.offset + ent.length]
+            for_me, recipient = False, None
+            tokens = self._split_recipient(command)
+            if tokens:
+                command, recipient = tokens
+
+            if self.chat_type == PRIVATE:
+                for_me = True 
+            elif tokens:
+                for_me = recipient == self.me.username
+            
+            if for_me:
+                if command == '/stop':
+                    self.LOG.debug('remove chat %s', self.chat_id)
+                    self._dispatcher.remove_chat_state(self)
+                if self._command_handlers.get(command):
+                    handlers.extend(self._command_handlers[command])
+
+    @staticmethod
+    def _split_recipient(text):
+        result = None
+        chunks = text.rsplit('@', 1)
+        if len(chunks) == 2:
+            result = chunks
+        return result 
 
     def handle_callback_query(self, update):
         with self._execution():
@@ -143,7 +165,7 @@ class ChatStateDispatcher:
         self._states = {}
         self._pool = threadpool.make_pool(single_thread)
         self._dispatch_execution = dispatch_execution
-
+        self.me = None
 
     def _clean_idle_states(self):
         self.LOG.debug('_clean_idle_states, {}'.format(len(self._states)))
@@ -180,6 +202,8 @@ class ChatStateDispatcher:
             self._chat_type_reg[ctype] = class_
 
     def dispatch_update(self, update):
+        if not self.me:
+            self.me = self.bot.getMe()
         self.LOG.debug(update)
         assert update is not None
         if update.message:
