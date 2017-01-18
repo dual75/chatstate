@@ -1,11 +1,8 @@
 import logging
-import sched, time
+import time
 import threading
-import re
 from datetime import datetime
-from queue import Queue, Empty
 
-import telegram
 from chatstate import PRIVATE, GROUP, CHANNEL, SUPERGROUP, ANY, CHAT_TYPE
 from . import reflection
 from . import threadpool
@@ -14,7 +11,6 @@ class ChatState:
     LOG = logging.getLogger('chatstate.ChatState')
 
     def __init__(self, dispatcher, chat_id, chat_type, user_or_group, instance, execution):
-        print(chat_id, chat_type, user_or_group, 'dioporoco')
         self.me = dispatcher.me
         self.chat_id = chat_id
         self.chat_type = chat_type
@@ -38,20 +34,6 @@ class ChatState:
         self._newchatmember_handlers = method_handlers[6]
         self._leftchatmember_handlers = method_handlers[7]
 
-    def persist(self, data):
-        session = botsql.Session()
-        cs = botsql.ChatState
-        dbo = session.query(cs).filter(cs.chat_id == self._chat_id).first()
-        if not selfdb:
-            dbo = botsql.ChatState(chat_id=self._chat_id, 
-                chat_type=self._chat_type, 
-                time_create=datetime.now(),
-                user_create='@' + self._telegram_user,
-                last_active = self.last_active
-            )
-            session.add(dbo)
-        dbo.data = data
-
     def handle_event(self, event):
         with self._execution():
             handlers = self._event_handlers.get(event['name']) or list()
@@ -61,11 +43,10 @@ class ChatState:
     def handle_message(self, ctx, update):
         with self._execution():
             self.last_active = time.time()
-            text = update.message.text
             handlers = list(self._message_handlers)
 
             if update.message.entities:
-                self._process_entities(ctx, update)
+                handlers.extend(self._process_entities(ctx, update))
 
             joined_member = update.message.new_chat_member
             if joined_member:
@@ -85,7 +66,8 @@ class ChatState:
                 handler(self, update)
 
     def _process_entities(self, ctx, update):
-        for ent in [e for e in entities if e.type == 'bot_command']:
+        result = []
+        for ent in [e for e in update.message.entities if e.type == 'bot_command']:
             command = update.message.text[ent.offset: ent.offset + ent.length]
             for_me, recipient = False, None
             tokens = self._split_recipient(command)
@@ -93,16 +75,17 @@ class ChatState:
                 command, recipient = tokens
 
             if self.chat_type == PRIVATE:
-                for_me = True 
+                for_me = True
             elif tokens:
                 for_me = recipient == self.me.username
-            
+
             if for_me:
                 if command == '/stop':
                     self.LOG.debug('remove chat %s', self.chat_id)
                     self._dispatcher.remove_chat_state(self)
-                if self._command_handlers.get(command):
-                    handlers.extend(self._command_handlers[command])
+                if command in self._command_handlers:
+                    result.extend(self._command_handlers[command])
+        return result
 
     @staticmethod
     def _split_recipient(text):
@@ -110,7 +93,7 @@ class ChatState:
         chunks = text.rsplit('@', 1)
         if len(chunks) == 2:
             result = chunks
-        return result 
+        return result
 
     def handle_callback_query(self, update):
         with self._execution():
@@ -178,14 +161,14 @@ class ChatStateDispatcher:
                     deactivation_list.append(state.chat_id)
             for state_id in deactivation_list:
                 del(self._states[state_id])
-                self.LOG.debug('state %d deleted', chat_id)
+                self.LOG.debug('state %d deleted', state_id)
         self._scheduler.enter(30, 30, self._clean_idle_states)
 
     def _make_chat_state(self, chat_id, chat_type, user_or_group):
         result = None
         with self.STATES_LOCK:
             hcls = self._chat_type_reg.get(chat_type)
-            if not hcls and self._chat_type_reg.get(ANY):
+            if not hcls and ANY in self._chat_type_reg:
                 hcls = self._chat_type_reg[ANY]
             if hcls:
                 result = ChatState(self, chat_id, chat_type, user_or_group, hcls(), self._dispatch_execution)
