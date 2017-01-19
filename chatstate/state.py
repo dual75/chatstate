@@ -43,7 +43,7 @@ class ChatState:
     def handle_message(self, update):
         with self._execution():
             self.last_active = time.time()
-            handlers = list(self._message_handlers)
+            handlers = []
 
             if update.message.entities:
                 handlers.extend(self._process_entities(update))
@@ -62,6 +62,8 @@ class ChatState:
                 else:
                     handlers.extend(self._leftchatmember_handlers)
 
+            handlers.extend(list(self._message_handlers))
+            self.LOG.debug('handlers for update: %s', handlers)
             for handler in handlers:
                 handler(self, update)
 
