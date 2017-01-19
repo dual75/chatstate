@@ -93,7 +93,6 @@ class ChatState:
         result = None
         chunks = text.rsplit('@', 1)
         if len(chunks) == 2:
-            self.LOG.debug('found recipient %s in command %s', chunks[1], text)
             result = chunks
         return result
 
