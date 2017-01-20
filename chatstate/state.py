@@ -10,7 +10,7 @@ from . import threadpool
 class ChatState:
     LOG = logging.getLogger('chatstate.ChatState')
 
-    def __init__(self, dispatcher, chat_id, chat_type, user_or_group, instance, execution):
+    def __init__(self, dispatcher, chat_id, chat_type, user_or_group, handler_class, execution):
         self.me = dispatcher.me
         self.chat_id = chat_id
         self.chat_type = chat_type
@@ -19,9 +19,9 @@ class ChatState:
         self.execution = None
         self.last_active = datetime.now()
         self._dispatcher = dispatcher
-        self._instance = instance
         self._execution = execution
-        self._register_handlers(instance)
+        self._instance = handler_class(self)
+        self._register_handlers(self._instance)
 
     def _register_handlers(self, instance):
         method_handlers = reflection.extract_handlers(self.chat_type, instance)
@@ -38,7 +38,7 @@ class ChatState:
         with self._execution():
             handlers = self._event_handlers.get(event['name']) or list()
             for handler in handlers:
-                handler(self, event)
+                handler(event)
 
     def handle_message(self, update):
         with self._execution():
@@ -65,7 +65,7 @@ class ChatState:
             handlers.extend(list(self._message_handlers))
             self.LOG.debug('handlers for update: %s', handlers)
             for handler in handlers:
-                handler(self, update)
+                handler(update)
 
     def _process_entities(self, update):
         result = []
@@ -103,7 +103,7 @@ class ChatState:
             self.last_active = time.time()
             result = None
             if self._callbackquery_handler:
-                result = self._callbackquery_handler(self, update)
+                result = self._callbackquery_handler(update)
             self.bot.answerCallbackQuery(callback_query_id=update.callback_query.id, text=result)
 
     def handle_inline_callback_query(self, update):
@@ -114,13 +114,13 @@ class ChatState:
         with self._execution():
             self.last_active = time.time()
             if self._activate_handler:
-                self._activate_handler(self)
+                self._activate_handler()
 
     def on_deactivate(self):
         with self._execution():
             self.last_active = time.time()
             if self._deactivate_handler:
-                self._deactivate_handler(self)
+                self._deactivate_handler()
 
     def broadcast_event(self, event):
         with self._execution():
@@ -174,7 +174,7 @@ class ChatStateDispatcher:
             if not hcls and ANY in self._chat_type_reg:
                 hcls = self._chat_type_reg[ANY]
             if hcls:
-                result = ChatState(self, chat_id, chat_type, user_or_group, hcls(), self._dispatch_execution)
+                result = ChatState(self, chat_id, chat_type, user_or_group, hcls, self._dispatch_execution)
             if result:
                 self._states[chat_id] = result
         if result:
