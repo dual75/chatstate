@@ -30,11 +30,11 @@ def is_suitable(ctype, ctypes):
     return ctype in ctypes or ANY in ctypes
 
 def extract_handlers(chat_type, handler):
-    message_handlers = list()
+    message_handler = None
     command_handlers = dict()
     callback_query_handler = None
-    newchatmember_handlers = list()
-    leftchatmember_handlers = list()
+    newchatmember_handler = None
+    leftchatmember_handler = None
     event_handlers = dict()
     activate_handler = deactivate_handler = None
     LOG.debug('register handlers for {} instance'.format(handler))
@@ -42,24 +42,24 @@ def extract_handlers(chat_type, handler):
         mtypes = getattr(method, TAG_CHATTYPE)
         LOG.debug('method %s, chat_types: %s', method, mtypes)
         if chat_type in mtypes or ANY in mtypes:
-            if hasattr(method, TAG_COMMAND):
-                commands = getattr(method, TAG_COMMAND)
-                for cmd in commands:
-                    LOG.debug('found command handler ' + str(method))
-                    command_handlers.setdefault(cmd, []).append(method)
             if hasattr(method, TAG_MESSAGE):
                 LOG.debug('found message handler ' + str(method))
-                message_handlers.append(method)
+                assert message_handler is None
+                message_handler = method
+            if hasattr(method, TAG_COMMAND):
+                for cmd in getattr(method, TAG_COMMAND):
+                    LOG.debug('found command handler ' + str(method))
+                    assert cmd not in command_handlers
+                    command_handlers[cmd] = method
             if hasattr(method, TAG_CALLBACKQUERY):
                 LOG.debug('found callback_query handler ' + str(method))
                 assert callback_query_handler is None
                 callback_query_handler = method
-            if hasattr(method, TAG_NEWCHATMEMBER):
-                LOG.debug('found newchatmember handler ' + str(method))
-                newchatmember_handlers.append(method)
-            if hasattr(method, TAG_LEFTCHATMEMBER):
-                LOG.debug('found leftchatmember handler ' + str(method))
-                leftchatmember_handlers.append(method)
+            if hasattr(method, TAG_EVENT):
+                LOG.debug('found event handler %s', str(method))
+                events = getattr(method, TAG_EVENT)
+                for evt in events:
+                    event_handlers.setdefault(evt, []).append(method)
             if hasattr(method, TAG_ACTIVATE):
                 LOG.debug('found activate ' + str(method))
                 assert activate_handler is None
@@ -68,19 +68,23 @@ def extract_handlers(chat_type, handler):
                 LOG.debug('found deactivate ' + str(method))
                 assert deactivate_handler is None
                 deactivate_handler = method
-            if hasattr(method, TAG_EVENT):
-                LOG.debug('found event handler %s', str(method))
-                events = getattr(method, TAG_EVENT)
-                for evt in events:
-                    event_handlers.setdefault(evt, []).append(method)
-    return message_handlers, \
+            if hasattr(method, TAG_NEWCHATMEMBER):
+                LOG.debug('found newchatmember handler ' + str(method))
+                assert newchatmember_handler is None
+                newchatmember_handler = method
+            if hasattr(method, TAG_LEFTCHATMEMBER):
+                LOG.debug('found leftchatmember handler ' + str(method))
+                assert leftchatmember_handler is None
+                leftchatmember_handler = method
+
+    return message_handler, \
             command_handlers, \
             callback_query_handler, \
             event_handlers, \
             activate_handler, \
             deactivate_handler, \
-            newchatmember_handlers, \
-            leftchatmember_handlers
+            newchatmember_handler, \
+            leftchatmember_handler
 
 
 
