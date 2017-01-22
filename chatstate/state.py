@@ -4,10 +4,11 @@ import threading
 from datetime import datetime
 
 from chatstate import PRIVATE, GROUP, CHANNEL, SUPERGROUP, ANY, CHAT_TYPE
-from . import reflection
+from . import decorators
 from . import threadpool
 
 class ChatContext:
+    
     LOG = logging.getLogger('chatstate.ChatContext')
 
     def __init__(self, dispatcher, chat_id, chat_type, user_or_group, handler_class, execution):
@@ -24,7 +25,7 @@ class ChatContext:
         self._register_handlers(self._instance)
 
     def _register_handlers(self, instance):
-        method_handlers = reflection.extract_handlers(self.chat_type, instance)
+        method_handlers = decorators.extract_handlers(self.chat_type, instance)
         self._message_handler = method_handlers[0]
         self._command_handlers = method_handlers[1]
         self._callbackquery_handler = method_handlers[2]
@@ -136,7 +137,7 @@ class NullDispatchExecution(object):
 
 
 class ChatStateDispatcher:
-    LOG = logging.getLogger('ChatContext.ChatContextDispatcher')
+    LOG = logging.getLogger('chatstate.ChatContextDispatcher')
     CTX_LOCK = threading.RLock()
 
     def __init__(self, bot, dispatch_execution=NullDispatchExecution, max_idle_minutes=1440, single_thread=False):
@@ -181,7 +182,7 @@ class ChatStateDispatcher:
         return result
 
     def register_class(self, class_):
-        assert reflection.has_chattype(class_)
+        assert decorators.has_chattype(class_)
         print('current types: %s', self._chat_type_reg)
         for chat_type in class_._TELEGRAM_chattype:
             print('analyze type: %d', chat_type)
