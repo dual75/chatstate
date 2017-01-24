@@ -8,7 +8,7 @@ from . import decorators
 from . import threadpool
 
 class ChatContext:
-    
+
     LOG = logging.getLogger('chatstate.ChatContext')
 
     def __init__(self, dispatcher, chat_id, chat_type, user_or_group, handler_class, execution):
@@ -38,7 +38,8 @@ class ChatContext:
     def handle_event(self, event):
         with self._execution():
             if event['name'] in self._event_handlers:
-                self._event_handlers[event['name']](event)
+                for handler in self._event_handlers[event['name']]:
+                    handler(event)
 
     def handle_message(self, update):
         with self._execution():
@@ -51,7 +52,7 @@ class ChatContext:
             joined_member = update.message.new_chat_member
             if joined_member:
                 self.LOG.debug('User joined, %d %s', joined_member.id, joined_member.username)
-                handlers.extend(self._newchatmember_handlers)
+                self._newchatmember_handler and handlers.append(self._newchatmember_handler)
 
             left_member = update.message.left_chat_member
             if left_member:
@@ -60,7 +61,7 @@ class ChatContext:
                     self.LOG.debug('removing myself from dispatcher')
                     self._dispatcher.remove_chat_context(self)
                 else:
-                    handlers.extend(self._leftchatmember_handlers)
+                    self._leftchatmember_handler and handlers.extend(self._leftchatmember_handler)
 
             handlers.append(self._message_handler)
             self.LOG.debug('handlers for update: %s', handlers)
