@@ -148,22 +148,22 @@ class ChatStateDispatcher:
                                     )
                                 )
         self._max_idle_minutes = max_idle_minutes
-        self._states = {}
+        self.contexts = {}
         self._pool = threadpool.make_pool(single_thread)
         self._dispatch_execution = dispatch_execution
         self.me = None
 
     def _clean_idle_states(self):
-        self.LOG.debug('_clean_idle_states, {}'.format(len(self._states)))
+        self.LOG.debug('_clean_idle_states, {}'.format(len(self.contexts)))
         with self.STATES_LOCK:
             limit = time.time() - self._max_idle_minutes * 60
             deactivation_list = []
-            for state in self._states.values():
+            for state in self.contexts.values():
                 if state.last_active < limit:
                     state.on_deactivate()
                     deactivation_list.append(state.chat_id)
             for state_id in deactivation_list:
-                del(self._states[state_id])
+                del(self.contexts[state_id])
                 self.LOG.debug('state %d deleted', state_id)
         self._scheduler.enter(30, 30, self._clean_idle_states)
 
@@ -176,7 +176,7 @@ class ChatStateDispatcher:
             if hcls:
                 result = ChatState(self, chat_id, chat_type, user_or_group, hcls(), self._dispatch_execution)
             if result:
-                self._states[chat_id] = result
+                self.contexts[chat_id] = result
         if result:
             self._pool.notify((result.on_activate, tuple(), dict()))
         return result
@@ -198,7 +198,7 @@ class ChatStateDispatcher:
             self._dispatch_callback_query(update)
 
     def remove_chat_state(self, chat_state):
-        del(self._states[chat_state.chat_id])
+        del(self.contexts[chat_state.chat_id])
 
     @staticmethod
     def _extract_chat_data(message):
@@ -209,7 +209,7 @@ class ChatStateDispatcher:
 
     def _dispatch_message(self, update):
         chat_id, chat_type, uog = self._extract_chat_data(update.message)
-        chat_state = self._states.get(chat_id)
+        chat_state = self.contexts.get(chat_id)
         if not chat_state:
             chat_state = self._make_chat_state(chat_id, chat_type, uog)
         if chat_state:
@@ -219,7 +219,7 @@ class ChatStateDispatcher:
 
     def _dispatch_callback_query(self, update):
         chat_id, chat_type, uog = self._extract_chat_data(update.callback_query.message)
-        chat_state = self._states.get(chat_id)
+        chat_state = self.contexts.get(chat_id)
         if not chat_state:
             chat_state = self._make_chat_state(chat_id, chat_type, uog)
         if chat_state:
@@ -229,7 +229,7 @@ class ChatStateDispatcher:
 
     def broadcast_event(self, event):
         with self.STATES_LOCK:
-            for state in self._states.values():
+            for state in self.contexts.values():
                 self._pool.notify((state.handle_event, (event,), dict()))
 
     def start(self):
