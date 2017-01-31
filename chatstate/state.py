@@ -17,7 +17,6 @@ class ChatContext:
         self.chat_type = chat_type
         self.user_or_group = user_or_group
         self.bot = dispatcher.bot
-        self.execution = None
         self.last_active = datetime.now()
         self.dispatcher = dispatcher
         self._execution = execution
@@ -36,13 +35,13 @@ class ChatContext:
         self._leftchatmember_handler = method_handlers[7]
 
     def handle_event(self, event):
-        with self._execution():
+        with self._execution:
             if event['name'] in self._event_handlers:
                 for handler in self._event_handlers[event['name']]:
                     handler(event)
 
     def handle_message(self, update):
-        with self._execution():
+        with self._execution:
             self.last_active = time.time()
             handlers = []
 
@@ -102,7 +101,7 @@ class ChatContext:
         return result
 
     def handle_callback_query(self, update):
-        with self._execution():
+        with self._execution:
             self.last_active = time.time()
             result = None
             if self._callbackquery_handler:
@@ -110,33 +109,46 @@ class ChatContext:
             self.bot.answerCallbackQuery(callback_query_id=update.callback_query.id, text=result)
 
     def handle_inline_callback_query(self, update):
-        with self._execution():
+        with self._execution:
             self.last_active = datetime.now()
 
     def on_activate(self):
-        with self._execution():
+        with self._execution:
             self.last_active = time.time()
             if self._activate_handler:
                 self._activate_handler()
 
     def on_deactivate(self):
-        with self._execution():
+        with self._execution:
             self.last_active = time.time()
             if self._deactivate_handler:
                 self._deactivate_handler()
 
     def broadcast_event(self, event):
-        with self._execution():
+        with self._execution:
             self.dispatcher.broadcast_event(event)
+
+    def send_message(self, text, **kwargs):
+        kwargs['text'] = test
+        kwargs['parse_mode'] = 'Markdown'
+        return self.bot.sendMessage(self.chat_id, **kwargs)
+
+    def send_photo(self, photo, **kwargs):
+        kwargs['photo'] = photo
+        return self.bot.sendPhoto(self.chat_id, **kwargs)
 
 
 class NullDispatchExecution(object):
 
+    def __init__(self):
+        self.lock = threading.RLock()
+
     def __enter__(self):
+        self.lock.acquire()
         return self
 
     def __exit__(self, type, value, traceback):
-        pass
+        self.lock.release()
 
 
 class ChatStateDispatcher:
@@ -177,7 +189,7 @@ class ChatStateDispatcher:
             if not handler_class and ANY in self._chat_type_reg:
                 handler_class = self._chat_type_reg[ANY]
             if handler_class:
-                result = ChatContext(self, chat_id, chat_type, user_or_group, handler_class, self._dispatch_execution)
+                result = ChatContext(self, chat_id, chat_type, user_or_group, handler_class, self._dispatch_execution())
             if result:
                 self.contexts[chat_id] = result
         if result:
