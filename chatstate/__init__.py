@@ -1,11 +1,11 @@
-PRIVATE, GROUP, CHANNEL, SUPERGROUP, ANY = range(5)
+PRIVATE, GROUP, CHANNEL, SUPERGROUP, ANY, NONE = range(6)
 CHAT_TYPE = {
     'private':      PRIVATE,
     'group':        GROUP,
     'channel':      CHANNEL,
-    'supergroup':   SUPERGROUP
+    'supergroup':   SUPERGROUP,
 }
 
 
-from . state import ChatStateDispatcher
+from . dispatcher import ChatStateDispatcher
 

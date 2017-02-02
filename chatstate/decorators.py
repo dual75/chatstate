@@ -1,7 +1,7 @@
 import logging
 import types
 
-from chatstate import ANY
+from chatstate import ANY, NONE
 
 TAG_ACTIVATE        = '_TELEGRAM_activate'
 TAG_DEACTIVATE      = '_TELEGRAM_deactivate'
@@ -12,6 +12,7 @@ TAG_NEWCHATMEMBER   = '_TELEGRAM_newchatmember'
 TAG_LEFTCHATMEMBER  = '_TELEGRAM_leftchatmember'
 TAG_CALLBACKQUERY   = '_TELEGRAM_callbackquery'
 TAG_CHATTYPE        = '_TELEGRAM_chattype'
+TAG_INLINEQUERY     = '_TELEGRAM_inlinequery'
 
 LOG = logging.getLogger('chatstate.reflection')
 
@@ -29,7 +30,7 @@ class MethodDecorator:
 
     @staticmethod
     def _update_tag(f, tag, value):
-        assert tag is not None 
+        assert tag is not None
         assert isinstance(tag, str)
 
         curvals = getattr(f, tag) if hasattr(f, tag) else set()
@@ -37,7 +38,7 @@ class MethodDecorator:
             curvals.update(value)
         else:
             curvals.add(value)
-        setattr(f, tag, curvals) 
+        setattr(f, tag, curvals)
         return f
 
 
@@ -86,7 +87,7 @@ class command(MethodDecorator):
     def __call__(self, f):
         f = super(command, self).__call__(f)
         return self._update_tag(f, TAG_COMMAND, self._command)
-      
+
 
 class event(MethodDecorator):
     def __init__(self, chat_type, name):
@@ -98,6 +99,18 @@ class event(MethodDecorator):
     def __call__(self, f):
         f = super(event, self).__call__(f)
         return self._update_tag(f, TAG_EVENT, self._name)
+
+
+class inline_query(MethodDecorator):
+    def __init__(self, name):
+        assert name is not None
+        assert isinstance(name, str)
+        self._name = name
+        super(inline_query, self).__init__(NONE)
+
+    def __call__(self, f):
+        f = super(inline_query, self).__call__(f)
+        return self._update_tag(f, TAG_INLINEQUERY, self._name)
 
 
 '''
@@ -112,6 +125,9 @@ class chatstate(MethodDecorator):
 '''
 def has_chattype(cls):
     return hasattr(cls, TAG_CHATTYPE)
+
+def has_inlinequery(f):
+    return hasattr(f, TAG_INLINEQUERY)
 
 def methods(obj):
     return [method
