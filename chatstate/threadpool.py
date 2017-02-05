@@ -12,7 +12,6 @@ def make_pool(single=False):
             result = ThreadPool()
     return result
     
-    
 class ThreadPool:
 
     LOG = logging.getLogger('ThreadPool')
@@ -53,7 +52,7 @@ class ThreadPool:
         self._queue.put(message)
 
 
-class NullThreadPool(ThreadPool):
+class NullThreadPool(object):
     
     def start(self):
         pass
