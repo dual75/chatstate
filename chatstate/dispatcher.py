@@ -1,14 +1,17 @@
 import logging
-import time
 import threading
 
 from telegram.error import TelegramError
 
-from chatstate import PRIVATE, GROUP, CHANNEL, SUPERGROUP, ANY, CHAT_TYPE
+from chatstate import PRIVATE, CHAT_TYPE
 from chatstate import decorators, threadpool
 from chatstate.context import ChatContextManager
+from chatstate.locking import LOCK
 
 LOG = logging.getLogger(__name__)
+
+EMPTY_DICT = dict()
+
 
 class NullDispatchExecution(object):
 
@@ -69,10 +72,13 @@ class MessageProcessor(UpdateProcessor):
         chat_id, chat_type, uog = _extract_chat_data(update.message)
         chat_context = self._manager[chat_id]
         if not chat_context:
-            chat_context = self._manager.new_chat_context(
+            with LOCK:
+                chat_context = self._manager[chat_id]
+                if not chat_context:
+                    chat_context = self._manager.new_chat_context(
                                 self._dispatcher, chat_id, chat_type, uog)
         if chat_context:
-            self._pool.notify((chat_context.handle_message, (update,), dict()))
+            self._pool.notify((chat_context.handle_message, (update,), EMPTY_DICT))
         else:
             LOG.warn('got update.message for unknown chat_type: %s', chat_type)
         return True
@@ -89,11 +95,14 @@ class CallbackQueryProcessor(UpdateProcessor):
         chat_id, chat_type, uog = _extract_chat_data(message)
         chat_context = self._manager[chat_id]
         if not chat_context:
-            chat_context = self._manager.new_chat_context(self._dispatcher,
-                                chat_id, chat_type, uog)
+            with LOCK:
+                chat_context = self._manager[chat_id]
+                if not chat_context:
+                    chat_context = self._manager.new_chat_context(
+                                self._dispatcher, chat_id, chat_type, uog)
         if chat_context:
             self._pool.notify(
-                    (chat_context.handle_callback_query, (update,), dict())
+                    (chat_context.handle_callback_query, (update,), EMPTY_DICT)
                     )
         else:
             LOG.warn('callback_query for unknow chat_type: %s', chat_type)
@@ -108,14 +117,15 @@ class InlineQueryProcessor(UpdateProcessor):
 
     def process(self, update):
         inline_query, handler = update.inline_query, None
-        lquery = inline_query.query.lower()
-        for key in self._inlinequery_reg:
-            if lquery.startswith(key.lower()):
-                LOG.debug('inlinequery handler %s', self._inlinequery_reg[key])
-                handler = self._inlinequery_reg[key]
+        lquery, handler = inline_query.query.lower(), None
+        for key in self._dispatcher._inlinequery_reg:
+            if key.startswith(lquery.lower()):
+                LOG.debug('inlinequery handler %s',
+                            self._dispatcher._inlinequery_reg[key])
+                handler = self._dispatcher._inlinequery_reg[key]
                 break
         if handler:
-            self._pool.notify((handler, (self.bot, update), dict()))
+            self._pool.notify((handler, (self._dispatcher.bot, update), EMPTY_DICT))
         return False
 
 
@@ -143,22 +153,36 @@ class ChatStateDispatcher:
             self._inlinequery_reg[query] = function_
 
     def dispatch_update(self, update):
+        LOG.debug('begin dispatch_update')
         assert update is not None
         try:
             if not self.me: self.me = self.bot.getMe()
             LOG.debug(update)
             self._processor_chain.process(update)
         except TelegramError as e:
-            LOG.exception(e)
+            LOG.exception('errore while dispatch_update', e)
 
-    def broadcast_event(self, event):
-        for state in self.register.instances():
-            self.pool.notify((state.handle_event, (event,), dict()))
+    def idle_check(self):
+        removed = []
+        LOG.info('Idle check...')
+        to_deactivate = self.manager.idle()
+        with LOCK:
+            for ctx in to_deactivate:
+                LOG.info('removing idle chatstate %s', ctx.chat_id)
+                self.manager.remove_chat_context(ctx)
+                removed.append(ctx)
+        return removed
+
+    def broadcast_event(self, event, data=EMPTY_DICT):
+        for ctx in self.manager.all():
+            self.pool.notify((ctx.on_event, (event,), data))
 
     def start(self):
         self.pool.start()
         LOG.debug('dispatcher started')
 
     def stop(self):
+        for ctx in self.manager.all():
+            self.pool.notify((ctx.on_stop, (), EMPTY_DICT))
         self.pool.stop()
         LOG.debug('dispatcher stopped')

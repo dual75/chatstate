@@ -2,7 +2,7 @@ import logging
 
 from datetime import datetime
 
-from chatstate import PRIVATE, GROUP, CHANNEL, SUPERGROUP, ANY, CHAT_TYPE
+from chatstate import PRIVATE, ANY, CHAT_TYPE
 from chatstate import decorators
 
 LOG = logging.getLogger(__name__)
@@ -28,16 +28,11 @@ class ChatContext:
         self._command_handlers = method_handlers[1]
         self._callbackquery_handler = method_handlers[2]
         self._event_handlers = method_handlers[3]
-        self._activate_handler = method_handlers[4]
-        self._deactivate_handler = method_handlers[5]
-        self._newchatmember_handler = method_handlers[6]
-        self._leftchatmember_handler = method_handlers[7]
-
-    def handle_event(self, event):
-        with self._execution:
-            if event['name'] in self._event_handlers:
-                for handler in self._event_handlers[event['name']]:
-                    handler(event)
+        self._wake_handler = method_handlers[4]
+        self._newchatmember_handler = method_handlers[5]
+        self._leftchatmember_handler = method_handlers[6]
+        self._idle_handler = method_handlers[7]
+        self._stop_handler = method_handlers[8]
 
     def handle_message(self, update):
         with self._execution:
@@ -98,44 +93,43 @@ class ChatContext:
     def _split_recipient(text):
         result = None
         chunks = text.rsplit('@', 1)
-        if len(chunks) == 2:
-            result = chunks
+        if len(chunks) == 2: result = chunks
         return result
 
     def handle_callback_query(self, update):
         with self._execution:
             self.last_active = datetime.now()
-            result = None
-            if self._callbackquery_handler:
-                result = self._callbackquery_handler(update)
-            try:
-                LOG.debug('now aswer callback query...')
-                self.bot.answerCallbackQuery(
-                    callback_query_id=update.callback_query.id,
-                    text=result)
-                LOG.debug('ok')
-            except Exception as e:
-                LOG.exception(e)
+            self._callbackquery_handler and self._callbackquery_handler(update)
 
     def handle_inline_callback_query(self, update):
         with self._execution:
             self.last_active = datetime.now()
 
-    def on_activate(self):
+    def on_wake(self):
         with self._execution:
             self.last_active = datetime.now()
-            if self._activate_handler:
-                self._activate_handler()
+            self._wake_handler and self._wake_handler()
 
-    def on_deactivate(self):
+    def on_idle(self):
+        result = True
         with self._execution:
+            if self._idle_handler: result = self._idle_handler()
+        return result
+
+    def on_stop(self):
+        result = True
+        with self._execution:
+            if self._stop_handler: result = self._stop_handler()
+        return result
+
+    def on_event(self, evt, **kwargs):
+        if evt in self._event_handlers:
             self.last_active = datetime.now()
-            if self._deactivate_handler:
-                self._deactivate_handler()
+            self._event_handlers[evt](kwargs)
 
-    def broadcast_event(self, event):
+    def broadcast_event(self, event, data=dict()):
         with self._execution:
-            self.dispatcher.broadcast_event(event)
+            self.dispatcher.broadcast_event(event, data)
 
     def send_message(self, text, **kwargs):
         kwargs.setdefault('text', text)
@@ -145,6 +139,10 @@ class ChatContext:
     def send_photo(self, photo, **kwargs):
         kwargs.setdefault('photo', photo)
         return self.bot.sendPhoto(self.chat_id, **kwargs)
+
+    def send_video(self, video, **kwargs):
+        kwargs.setdefault('video', video)
+        return self.bot.sendVideo(self.chat_id, **kwargs)
 
 
 class ContextClassRegistry:
@@ -184,6 +182,8 @@ class ContextFactory:
 
 class ContextRegistry(object):
 
+    IDLE_SECONDS = 1800
+
     def __init__(self):
         self.contexts = dict()
 
@@ -193,6 +193,23 @@ class ContextRegistry(object):
 
     def __setitem__(self, key, value):
         self.contexts[key] = value
+
+    def __delitem__(self, key):
+        del self.contexts[key]
+
+    def idle(self):
+        now, idle_list = datetime.now(), list()
+        for ctx in self.contexts.values():
+            LOG.info('ctx %s is being verified, last_active: %s', ctx.chat_id, ctx.last_active)
+            if (now - ctx.last_active).seconds > self.IDLE_SECONDS:
+                deactivate = ctx.on_idle()
+                if deactivate:
+                    LOG.info('ctx %s is going to be unloaded', ctx.chat_id)
+                    idle_list.append(ctx)
+        return idle_list
+
+    def all(self):
+        return self.contexts.values()
 
 
 class ChatContextManager:
@@ -206,27 +223,21 @@ class ChatContextManager:
         return self._ctxregistry[key]
 
     def new_chat_context(self, dispatcher, chat_id, chat_type, user_or_group):
-        result = self._ctxfactory.new_chat_context(dispatcher, chat_id, chat_type, user_or_group)
+        result = self._ctxfactory.new_chat_context(dispatcher,
+                                            chat_id, chat_type, user_or_group)
         self._ctxregistry[chat_id] = result
         return result
 
     def register_class(self, cls_):
         return self._clsregistry.register_class(cls_)
 
+    def remove_chat_context(self, ctx):
+        LOG.debug('delete context chat_id %s', ctx.chat_id)
+        del self._ctxregistry[ctx.chat_id]
 
+    def idle(self):
+        return self._ctxregistry.idle()
 
-    '''
-    def clean_idle_contexts(self):
-        LOG.debug('_clean_idle_contexts, {}'.format(len(self._contexts)))
-        with self.CTX_LOCK:
-            limit = time.time() - self._max_idle_minutes * 60
-            deactivation_list = []
-            for state in self.contexts.values():
-                if state.last_active < limit:
-                    state.on_deactivate()
-                    deactivation_list.append(state.chat_id)
-            for state_id in deactivation_list:
-                del(self.contexts[state_id])
-                LOG.debug('state %d deleted', state_id)
-        self._scheduler.enter(30, 30, self._clean_idle_contexts)
-    '''
+    def all(self):
+        return self._ctxregistry.all()
+

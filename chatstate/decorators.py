@@ -4,7 +4,7 @@ import types
 from chatstate import ANY, NONE
 
 TAG_ACTIVATE        = '_TELEGRAM_activate'
-TAG_DEACTIVATE      = '_TELEGRAM_deactivate'
+TAG_IDLE            = '_TELEGRAM_deactivate'
 TAG_EVENT           = '_TELEGRAM_event'
 TAG_MESSAGE         = '_TELEGRAM_message'
 TAG_COMMAND         = '_TELEGRAM_command'
@@ -13,6 +13,7 @@ TAG_LEFTCHATMEMBER  = '_TELEGRAM_leftchatmember'
 TAG_CALLBACKQUERY   = '_TELEGRAM_callbackquery'
 TAG_CHATTYPE        = '_TELEGRAM_chattype'
 TAG_INLINEQUERY     = '_TELEGRAM_inlinequery'
+TAG_STOP            = '_TELEGRAM_stop'
 
 LOG = logging.getLogger('chatstate.reflection')
 
@@ -44,48 +45,54 @@ class MethodDecorator:
 
 class message(MethodDecorator):
     def __call__(self, f):
-        f = super(message, self).__call__(f)
+        f = super().__call__(f)
         return self._update_tag(f, TAG_MESSAGE, self._chat_type)
 
 
 class callback_query(MethodDecorator):
     def __call__(self, f):
-        f = super(callback_query, self).__call__(f)
+        f = super().__call__(f)
         return self._update_tag(f, TAG_CALLBACKQUERY, self._chat_type)
 
 
 class new_chat_member(MethodDecorator):
     def __call__(self, f):
-        f = super(callback_query, self).__call__(f)
+        f = super().__call__(f)
         return self._update_tag(f, TAG_NEWCHATMEMBER, self._chat_type)
 
 
 class left_chat_member(MethodDecorator):
     def __call__(self, f):
-        f = super(callback_query, self).__call__(f)
+        f = super().__call__(f)
         return self._update_tag(f, TAG_LEFTCHATMEMBER, self._chat_type)
 
 
 class activate(MethodDecorator):
      def __call__(self, f):
-        f = super(activate, self).__call__(f)
+        f = super().__call__(f)
         return self._update_tag(f, TAG_ACTIVATE, self._chat_type)
 
 
-class deactivate(MethodDecorator):
+class idle(MethodDecorator):
      def __call__(self, f):
-        f = super(deactivate, self).__call__(f)
-        return self._update_tag(f, TAG_DEACTIVATE, self._chat_type)
+        f = super().__call__(f)
+        return self._update_tag(f, TAG_IDLE, self._chat_type)
+
+
+class stop(MethodDecorator):
+     def __call__(self, f):
+        f = super().__call__(f)
+        return self._update_tag(f, TAG_STOP, self._chat_type)
 
 
 class command(MethodDecorator):
     def __init__(self, chat_type, name):
         assert isinstance(name, (str, list, tuple, set))
         self._command = name
-        super(command, self).__init__(chat_type)
+        super().__init__(chat_type)
 
     def __call__(self, f):
-        f = super(command, self).__call__(f)
+        f = super().__call__(f)
         return self._update_tag(f, TAG_COMMAND, self._command)
 
 
@@ -94,10 +101,10 @@ class event(MethodDecorator):
         assert name is not None
         assert isinstance(name, str)
         self._name = name
-        super(event, self).__init__(chat_type)
+        super().__init__(chat_type)
 
     def __call__(self, f):
-        f = super(event, self).__call__(f)
+        f = super().__call__(f)
         return self._update_tag(f, TAG_EVENT, self._name)
 
 
@@ -106,10 +113,10 @@ class inline_query(MethodDecorator):
         assert name is not None
         assert isinstance(name, str)
         self._name = name
-        super(inline_query, self).__init__(NONE)
+        super().__init__(NONE)
 
     def __call__(self, f):
-        f = super(inline_query, self).__call__(f)
+        f = super().__call__(f)
         return self._update_tag(f, TAG_INLINEQUERY, self._name)
 
 
@@ -144,7 +151,7 @@ def extract_handlers(chat_type, handler):
     newchatmember_handler = None
     leftchatmember_handler = None
     event_handlers = dict()
-    activate_handler = deactivate_handler = None
+    activate_handler = idle_handler = stop_handler = None
     LOG.debug('register handlers for {} instance'.format(handler))
     for method in methods(handler):
         mtypes = getattr(method, TAG_CHATTYPE)
@@ -172,10 +179,6 @@ def extract_handlers(chat_type, handler):
                 LOG.debug('found activate ' + str(method))
                 assert activate_handler is None
                 activate_handler = method
-            if hasattr(method, TAG_DEACTIVATE):
-                LOG.debug('found deactivate ' + str(method))
-                assert deactivate_handler is None
-                deactivate_handler = method
             if hasattr(method, TAG_NEWCHATMEMBER):
                 LOG.debug('found newchatmember handler ' + str(method))
                 assert newchatmember_handler is None
@@ -184,13 +187,22 @@ def extract_handlers(chat_type, handler):
                 LOG.debug('found leftchatmember handler ' + str(method))
                 assert leftchatmember_handler is None
                 leftchatmember_handler = method
+            if hasattr(method, TAG_IDLE):
+                LOG.debug('found idle ' + str(method))
+                assert idle_handler is None
+                idle_handler = method
+            if hasattr(method, TAG_STOP):
+                LOG.debug('found stop handler ' + str(method))
+                assert stop_handler is None
+                stop_handler = method
 
     return message_handler, \
             command_handlers, \
             callback_query_handler, \
             event_handlers, \
             activate_handler, \
-            deactivate_handler, \
             newchatmember_handler, \
-            leftchatmember_handler
+            leftchatmember_handler, \
+            idle_handler, \
+            stop_handler
 
