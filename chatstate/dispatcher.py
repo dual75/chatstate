@@ -134,11 +134,12 @@ class ChatStateDispatcher:
     LOG = logging.getLogger('chatstate.ChatContextDispatcher')
 
     def __init__(self, bot, dispatch_execution=NullDispatchExecution,
-                                max_idle_minutes=1440, single_thread=False):
+                                idle_timeout=1800,
+                                single_thread=False):
         self.bot = bot
         self.me = None
         self.pool = threadpool.make_pool(single_thread)
-        self.manager = ChatContextManager()
+        self.manager = ChatContextManager(idle_timeout=idle_timeout)
         self.dispatch_execution = dispatch_execution
         self._inlinequery_reg = dict()
         self._processor_chain = ProcessorChain([
@@ -174,8 +175,10 @@ class ChatStateDispatcher:
         return removed
 
     def broadcast_event(self, event, data=EMPTY_DICT):
+        print('all contexts', self.manager.all())
         for ctx in self.manager.all():
-            self.pool.notify((ctx.on_event, (event,), data))
+            print(event, 'to', ctx.chat_id)
+            self.pool.notify((ctx.on_event, (event, data,), EMPTY_DICT))
 
     def start(self):
         self.pool.start()

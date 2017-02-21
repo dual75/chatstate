@@ -122,10 +122,11 @@ class ChatContext:
             if self._stop_handler: result = self._stop_handler()
         return result
 
-    def on_event(self, evt, **kwargs):
+    def on_event(self, evt, data):
         if evt in self._event_handlers:
             self.last_active = datetime.now()
-            self._event_handlers[evt](kwargs)
+            with self._execution:
+                for handler in self._event_handlers[evt]: handler(data)
 
     def broadcast_event(self, event, data=dict()):
         with self._execution:
@@ -180,12 +181,11 @@ class ContextFactory:
         return result
 
 
-class ContextRegistry(object):
+class ContextRegistry:
 
-    IDLE_SECONDS = 1800
-
-    def __init__(self):
+    def __init__(self, idle_timeout=1800):
         self.contexts = dict()
+        self.idle_timeout = idle_timeout
 
     def __getitem__(self, key):
         result = self.contexts.get(key)
@@ -201,9 +201,9 @@ class ContextRegistry(object):
         now, idle_list = datetime.now(), list()
         for ctx in self.contexts.values():
             LOG.info('ctx %s is being verified, last_active: %s', ctx.chat_id, ctx.last_active)
-            if (now - ctx.last_active).seconds > self.IDLE_SECONDS:
-                deactivate = ctx.on_idle()
-                if deactivate:
+            if (now - ctx.last_active).seconds > self.idle_timeout:
+                active = ctx.on_idle()
+                if not active:
                     LOG.info('ctx %s is going to be unloaded', ctx.chat_id)
                     idle_list.append(ctx)
         return idle_list
@@ -214,9 +214,9 @@ class ContextRegistry(object):
 
 class ChatContextManager:
 
-    def __init__(self):
+    def __init__(self, idle_timeout=1800):
         self._clsregistry = ContextClassRegistry()
-        self._ctxregistry = ContextRegistry()
+        self._ctxregistry = ContextRegistry(idle_timeout)
         self._ctxfactory = ContextFactory(self._clsregistry)
 
     def __getitem__(self, key):
