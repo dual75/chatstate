@@ -1,1 +1,4 @@
 requests>=2.10.0
+mypy>=0.540
+python-telegram-bot>=8.11.0
+
